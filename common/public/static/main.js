@@ -411,9 +411,7 @@ async function createUser() {
         },
         body: JSON.stringify(data)
     });
-    console.log("CreateUser request data:", data);
     let result = await response.json();
-    console.log("CreateUser response:", result);
     if (result.success) {
         showToast(`添加用户成功`, "success");
     } else {

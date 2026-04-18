@@ -2,7 +2,6 @@ package controller
 
 import (
 	"encoding/json"
-	"fmt"
 	"go-file/common"
 	"go-file/model"
 	"net/http"
@@ -98,7 +97,6 @@ func CreateUser(c *gin.Context) {
 	if user.Role != common.RoleAdminUser {
 		user.Role = common.RoleCommonUser
 	}
-	fmt.Printf("CreateUser: %+v\n", user)
 
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
