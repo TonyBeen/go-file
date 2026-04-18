@@ -216,7 +216,7 @@ func UploadFile(c *gin.Context) {
 					host = host + ":" + port
 				}
 			}
-			downloadURL := fmt.Sprintf("%s://%s/api/file/%s", scheme, host, link)
+			downloadURL := fmt.Sprintf("%s://%s/upload/%s", scheme, host, link)
 			downloadURLs = append(downloadURLs, downloadURL)
 		}
 		resp := gin.H{
@@ -281,7 +281,11 @@ func DownloadFile(c *gin.Context) {
 	// Check if file has expired
 	var fileObj model.File
 	model.DB.Where("link = ?", link).First(&fileObj)
-	if fileObj.Id != 0 && fileObj.DeleteIfExpired() {
+	if fileObj.Id != 0 && fileObj.IsExpired() {
+		c.Status(404)
+		return
+	}
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		c.Status(404)
 		return
 	}

@@ -78,14 +78,10 @@ func StartExpiredFileCleaner() {
 	}
 }
 
-func (file *File) DeleteIfExpired() bool {
+func (file *File) IsExpired() bool {
 	if file.ExpireAt == "" {
 		return false
 	}
 	now := time.Now().Format("2006-01-02 15:04:05")
-	if file.ExpireAt < now {
-		file.Delete()
-		return true
-	}
-	return false
+	return file.ExpireAt < now
 }
