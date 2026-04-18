@@ -2,13 +2,15 @@ package controller
 
 import (
 	"encoding/json"
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	"fmt"
 	"go-file/common"
 	"go-file/model"
 	"net/http"
 	"strings"
+
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func Login(c *gin.Context) {
@@ -93,7 +95,11 @@ func CreateUser(c *gin.Context) {
 	var user model.User
 	err := json.NewDecoder(c.Request.Body).Decode(&user)
 	user.DisplayName = user.Username
-	// TODO: Check user.Status && user.Role
+	if user.Role != common.RoleAdminUser {
+		user.Role = common.RoleCommonUser
+	}
+	fmt.Printf("CreateUser: %+v\n", user)
+
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
