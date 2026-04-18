@@ -59,6 +59,12 @@ func UpdateOption(c *gin.Context) {
 }
 
 func GetStatus(c *gin.Context) {
+	dbUsage := model.GetTotalFileSize()
+	diskUsage := common.CurrentDiskUsage
+	currentUsage := dbUsage
+	if diskUsage > currentUsage {
+		currentUsage = diskUsage
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -66,6 +72,8 @@ func GetStatus(c *gin.Context) {
 			"version":     common.Version,
 			"p2p_port":    *common.P2PPort,
 			"p2p_enabled": *common.EnableP2P,
+			"disk_usage":  currentUsage,
+			"max_size":    common.MaxUploadSizeBytes,
 		},
 	})
 	return

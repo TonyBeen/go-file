@@ -19,6 +19,7 @@ type File struct {
 	Time            string `json:"time"`
 	DownloadCounter int    `json:"download_counter"`
 	ExpireAt        string `json:"expire_at" gorm:"type:varchar(64);default:''"`
+	Size            int64  `json:"size" gorm:"default:0"`
 }
 
 type LocalFile struct {
@@ -60,6 +61,12 @@ func (file *File) Delete() error {
 
 func UpdateDownloadCounter(link string) {
 	DB.Model(&File{}).Where("link = ?", link).UpdateColumn("download_counter", gorm.Expr("download_counter + 1"))
+}
+
+func GetTotalFileSize() int64 {
+	var total int64
+	DB.Model(&File{}).Select("COALESCE(SUM(size), 0)").Row().Scan(&total)
+	return total
 }
 
 func DeleteExpiredFiles() {

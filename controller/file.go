@@ -47,6 +47,28 @@ func parseExpireDuration(expire string) (time.Duration, error) {
 }
 
 func UploadFile(c *gin.Context) {
+	// Pre-check: reject early if Content-Length exceeds limit
+	if common.MaxUploadSizeBytes > 0 {
+		contentLength := c.Request.ContentLength
+		if contentLength > 0 {
+			dbUsage := model.GetTotalFileSize()
+			diskUsage := common.CurrentDiskUsage
+			currentUsage := dbUsage
+			if diskUsage > currentUsage {
+				currentUsage = diskUsage
+			}
+			if currentUsage+contentLength > common.MaxUploadSizeBytes {
+				c.JSON(http.StatusInsufficientStorage, gin.H{
+					"success":       false,
+					"message":       fmt.Sprintf("disk usage %s exceeds limit %s", common.Bytes2Size(currentUsage), common.Bytes2Size(common.MaxUploadSizeBytes)),
+					"current_usage": currentUsage,
+					"max_size":      common.MaxUploadSizeBytes,
+				})
+				return
+			}
+		}
+	}
+
 	uploadPath := common.UploadPath
 	saveToDatabase := true
 	path := c.PostForm("path")
@@ -104,6 +126,29 @@ func UploadFile(c *gin.Context) {
 		}
 		files = append(files, file)
 	}
+	// Check disk usage limit before any disk write (DB sum first, then disk scan as fallback)
+	if common.MaxUploadSizeBytes > 0 {
+		dbUsage := model.GetTotalFileSize()
+		diskUsage := common.CurrentDiskUsage
+		currentUsage := dbUsage
+		if diskUsage > currentUsage {
+			currentUsage = diskUsage
+		}
+		var uploadSize int64
+		for _, f := range files {
+			uploadSize += f.Size
+		}
+		if currentUsage+uploadSize > common.MaxUploadSizeBytes {
+			message := fmt.Sprintf("disk usage %s exceeds limit %s", common.Bytes2Size(currentUsage), common.Bytes2Size(common.MaxUploadSizeBytes))
+			c.JSON(http.StatusInsufficientStorage, gin.H{
+				"success":       false,
+				"message":       message,
+				"current_usage": currentUsage,
+				"max_size":      common.MaxUploadSizeBytes,
+			})
+			return
+		}
+	}
 	t := time.Now()
 	subfolder := t.Format("2006-01")
 	err = common.MakeDirIfNotExist(filepath.Join(uploadPath, subfolder))
@@ -112,6 +157,7 @@ func UploadFile(c *gin.Context) {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
+
 	var uploadErrors []string
 	for _, file := range files {
 		// In case someone wants to upload to other folders.
@@ -166,6 +212,7 @@ func UploadFile(c *gin.Context) {
 				Link:        link,
 				Filename:    filename,
 				ExpireAt:    expireAt,
+				Size:        file.Size,
 			}
 			err = fileObj.Insert()
 			if err != nil {

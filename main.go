@@ -89,6 +89,10 @@ func main() {
 	}
 	// Start expired file cleaner
 	go model.StartExpiredFileCleaner()
+	// Start disk usage updater
+	if common.MaxUploadSizeBytes > 0 {
+		go common.StartDiskUsageUpdater()
+	}
 	err = server.Run(":" + realPort)
 	if err != nil {
 		common.FatalLog(err)

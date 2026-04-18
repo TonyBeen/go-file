@@ -1,4 +1,13 @@
 let hiddenTextArea = undefined;
+let currentDiskUsage = 0;
+let maxUploadSizeBytes = 0;
+
+fetch("/status").then(r => r.json()).then(r => {
+    if (r.success) {
+        currentDiskUsage = r.data.disk_usage || 0;
+        maxUploadSizeBytes = r.data.max_size || 0;
+    }
+}).catch(() => {});
 
 function showUploadModal() {
     if (location.href.split('/')[3].startsWith("explorer")) {
@@ -116,12 +125,24 @@ function uploadFile() {
     let fileUploadTitle = document.getElementById('fileUploadTitle');
     let fileUploadProgress = document.getElementById('fileUploadProgress');
     let fileUploadDetail = document.getElementById('fileUploadDetail');
-    fileUploadCard.style.display = 'block';
     let files = document.getElementById('fileInput').files;
     let description = document.getElementById("fileUploadDescription").value;
     if (files.length === 0 && description === "") {
         return;
     }
+    if (maxUploadSizeBytes > 0) {
+        let totalSize = 0;
+        for (let i = 0; i < files.length; i++) {
+            totalSize += files[i].size;
+        }
+        if (currentDiskUsage + totalSize > maxUploadSizeBytes) {
+            let currentMB = (currentDiskUsage / (1024 * 1024)).toFixed(1);
+            let limitMB = (maxUploadSizeBytes / (1024 * 1024)).toFixed(1);
+            showToast("disk usage " + currentMB + " MB exceeds limit " + limitMB + " MB", "danger");
+            return;
+        }
+    }
+    fileUploadCard.style.display = 'block';
     closeUploadModal();
     let formData = new FormData();
     for (let i = 0; i < files.length; i++) {
@@ -144,10 +165,19 @@ function uploadFile() {
         fileUploadDetail.innerText = `处理中 ${byte2mb(ev.loaded)} MB / ${byte2mb(ev.total)} MB...`
     }, false);
     fileUploader.addEventListener("load", ev => {
-        fileUploadTitle.innerText = `已上传 ${files.length} 个文件`;
         if (fileUploader.status === 403) {
             location.href = "/login";
+        } else if (fileUploader.status >= 400) {
+            try {
+                let result = JSON.parse(fileUploader.responseText);
+                showToast(result.message, "danger");
+            } catch (e) {
+                showToast("upload failed", "danger");
+            }
+            fileUploadTitle.innerText = "upload failed";
+            fileUploadCard.style.display = 'none';
         } else {
+            fileUploadTitle.innerText = `已上传 ${files.length} 个文件`;
             location.reload();
         }
         // setTimeout(()=>{

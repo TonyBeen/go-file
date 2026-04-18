@@ -62,8 +62,9 @@ var (
 	PrintVersion = flag.Bool("version", false, "Print version information.")
 	EnableP2P    = flag.Bool("enable-p2p", false, "Enable peer-to-peer relay or not.")
 	P2PPort      = flag.Int("p2p-port", 9377, "Specify the P2P listening port.")
-	LogDir       = flag.String("log-dir", "", "Specify the directory for log files.")
-	PrintHelp    = flag.Bool("help", false, "Print usage information.")
+	LogDir          = flag.String("log-dir", "", "Specify the directory for log files.")
+	MaxUploadSize   = flag.String("max-upload-size", "0", "Max upload disk usage, e.g. 1GB, 500MB, 0 means no limit.")
+	PrintHelp       = flag.Bool("help", false, "Print usage information.")
 )
 
 // UploadPath Maybe override by ENV_VAR
@@ -71,6 +72,8 @@ var UploadPath = "upload"
 var ExplorerRootPath = UploadPath
 var ImageUploadPath = "upload/images"
 var VideoServePath = "upload"
+var MaxUploadSizeBytes int64
+var CurrentDiskUsage int64
 
 //go:embed public
 var FS embed.FS
@@ -119,6 +122,12 @@ func init() {
 	}
 	if *Path != "" {
 		ExplorerRootPath = *Path
+	}
+	var parseErr error
+	MaxUploadSizeBytes, parseErr = ParseSize(*MaxUploadSize)
+	if parseErr != nil {
+		fmt.Println("invalid max-upload-size:", parseErr)
+		os.Exit(1)
 	}
 	if *VideoPath != "" {
 		VideoServePath = *VideoPath

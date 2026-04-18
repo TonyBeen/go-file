@@ -6,9 +6,11 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func OpenBrowser(url string) {
@@ -149,4 +151,57 @@ func MakeDirIfNotExist(dir string) error {
 		}
 	}
 	return nil
+}
+
+func ParseSize(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "0" {
+		return 0, nil
+	}
+	s = strings.ToUpper(s)
+	units := map[string]int64{
+		"KB": 1024,
+		"MB": 1024 * 1024,
+		"GB": 1024 * 1024 * 1024,
+		"TB": 1024 * 1024 * 1024 * 1024,
+	}
+	for unit, multiplier := range units {
+		if strings.HasSuffix(s, unit) {
+			numStr := strings.TrimSuffix(s, unit)
+			num, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
+			if err != nil {
+				return 0, fmt.Errorf("invalid size: %s", s)
+			}
+			return int64(num * float64(multiplier)), nil
+		}
+	}
+	// No unit, treat as bytes
+	num, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid size: %s", s)
+	}
+	return num, nil
+}
+
+func GetDirSize(dir string) (int64, error) {
+	var size int64
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // skip broken files
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
+}
+
+func StartDiskUsageUpdater() {
+	for {
+		if size, err := GetDirSize(UploadPath); err == nil {
+			CurrentDiskUsage = size
+		}
+		time.Sleep(5 * time.Minute)
+	}
 }
