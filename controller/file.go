@@ -22,6 +22,30 @@ type FileDeleteRequest struct {
 	//Token string
 }
 
+func parseExpireDuration(expire string) (time.Duration, error) {
+	if expire == "" {
+		return 0, nil
+	}
+	if len(expire) < 2 {
+		return 0, fmt.Errorf("invalid expire format: %s", expire)
+	}
+	unit := expire[len(expire)-1:]
+	value := expire[:len(expire)-1]
+	d, err := time.ParseDuration(value + unit)
+	if err == nil {
+		return d, nil
+	}
+	// Support 'd' for days
+	if unit == "d" {
+		days, err := time.ParseDuration(value + "h")
+		if err != nil {
+			return 0, fmt.Errorf("invalid expire format: %s", expire)
+		}
+		return days * 24, nil
+	}
+	return 0, fmt.Errorf("invalid expire format: %s", expire)
+}
+
 func UploadFile(c *gin.Context) {
 	uploadPath := common.UploadPath
 	saveToDatabase := true
@@ -46,6 +70,19 @@ func UploadFile(c *gin.Context) {
 	}
 
 	description := c.PostForm("description")
+	expireStr := c.PostForm("expire")
+	var expireAt string
+	if expireStr != "" {
+		d, err := parseExpireDuration(expireStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "invalid expire format, examples: 30s, 5m, 1h, 2d",
+			})
+			return
+		}
+		expireAt = time.Now().Add(d).Format("2006-01-02 15:04:05")
+	}
 	uploader := c.GetString("username")
 	if uploader == "" {
 		uploader = "匿名用户"
@@ -128,6 +165,7 @@ func UploadFile(c *gin.Context) {
 				Time:        currentTime,
 				Link:        link,
 				Filename:    filename,
+				ExpireAt:    expireAt,
 			}
 			err = fileObj.Insert()
 			if err != nil {
@@ -181,11 +219,15 @@ func UploadFile(c *gin.Context) {
 			downloadURL := fmt.Sprintf("%s://%s/api/file/%s", scheme, host, link)
 			downloadURLs = append(downloadURLs, downloadURL)
 		}
-		c.JSON(http.StatusOK, gin.H{
+		resp := gin.H{
 			"success":       true,
 			"message":       "OK",
 			"download_urls": downloadURLs,
-		})
+		}
+		if expireAt != "" {
+			resp["expire_at"] = expireAt
+		}
+		c.JSON(http.StatusOK, resp)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "./")
@@ -197,7 +239,7 @@ func DeleteFile(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"message": "无效的参数",
+			"message": "invalid parameters",
 		})
 		return
 	}
@@ -213,7 +255,7 @@ func DeleteFile(c *gin.Context) {
 			"message": err.Error(),
 		})
 	} else {
-		message := "文件删除成功"
+		message := "file deleted successfully"
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": message,
@@ -234,6 +276,13 @@ func DownloadFile(c *gin.Context) {
 	if !strings.HasPrefix(fullPath, common.UploadPath) {
 		// We may being attacked!
 		c.Status(403)
+		return
+	}
+	// Check if file has expired
+	var fileObj model.File
+	model.DB.Where("link = ?", link).First(&fileObj)
+	if fileObj.Id != 0 && fileObj.DeleteIfExpired() {
+		c.Status(404)
 		return
 	}
 	if strings.HasSuffix(fullPath, ".txt") && common.IsMobileUserAgent(c.Request.UserAgent()) {

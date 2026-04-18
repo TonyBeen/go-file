@@ -87,6 +87,8 @@ func main() {
 	if *common.EnableP2P {
 		go common.StartP2PServer()
 	}
+	// Start expired file cleaner
+	go model.StartExpiredFileCleaner()
 	err = server.Run(":" + realPort)
 	if err != nil {
 		common.FatalLog(err)
