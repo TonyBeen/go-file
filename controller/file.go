@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"go-file/common"
 	"go-file/model"
 	"mime/multipart"
@@ -13,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type FileDeleteRequest struct {
@@ -74,6 +75,7 @@ func UploadFile(c *gin.Context) {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
+	var uploadErrors []string
 	for _, file := range files {
 		// In case someone wants to upload to other folders.
 		filename := filepath.Base(file.Filename)
@@ -97,15 +99,15 @@ func UploadFile(c *gin.Context) {
 			if err != nil {
 				message := "failed to create file: " + err.Error()
 				common.SysError(message)
-				c.String(http.StatusInternalServerError, message)
-				return
+				uploadErrors = append(uploadErrors, message)
+				continue
 			}
 			_, err = f.WriteString(description)
 			if err != nil {
 				message := "failed to write text to file: " + err.Error()
 				common.SysError(message)
-				c.String(http.StatusInternalServerError, message)
-				return
+				uploadErrors = append(uploadErrors, message)
+				continue
 			}
 			descriptionRune := []rune(description)
 			if len(descriptionRune) > common.AbstractTextLength {
@@ -115,8 +117,8 @@ func UploadFile(c *gin.Context) {
 			if err := c.SaveUploadedFile(file, savePath); err != nil {
 				message := "failed to save uploaded file: " + err.Error()
 				common.SysError(message)
-				c.String(http.StatusInternalServerError, message)
-				return
+				uploadErrors = append(uploadErrors, message)
+				continue
 			}
 		}
 		if saveToDatabase {
@@ -130,9 +132,61 @@ func UploadFile(c *gin.Context) {
 			err = fileObj.Insert()
 			if err != nil {
 				common.SysError("failed to insert file to database: " + err.Error())
+				uploadErrors = append(uploadErrors, err.Error())
 				continue
 			}
 		}
+	}
+
+	// If the request is from API (Accept: application/json), return JSON with download URLs
+	if c.GetHeader("Accept") == "application/json" {
+		if len(uploadErrors) > 0 {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": strings.Join(uploadErrors, "; "),
+			})
+			return
+		}
+		var downloadURLs []string
+		for _, file := range files {
+			filename := filepath.Base(file.Filename)
+			link := ""
+			// Find the actual link from database if saved
+			if saveToDatabase {
+				var fileObj model.File
+				model.DB.Where("filename = ? AND uploader = ?", filename, uploader).Order("id desc").First(&fileObj)
+				if fileObj.Link != "" {
+					link = fileObj.Link
+				}
+			}
+			if link == "" {
+				// For explorer uploads or fallback
+				link = filename
+			}
+			scheme := "http"
+			if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
+				scheme = proto
+			} else if c.Request.TLS != nil {
+				scheme = "https"
+			}
+			host := c.Request.Host
+			if port := c.GetHeader("X-Forwarded-Port"); port != "" {
+				// Replace port in host
+				if idx := strings.LastIndex(host, ":"); idx != -1 {
+					host = host[:idx] + ":" + port
+				} else {
+					host = host + ":" + port
+				}
+			}
+			downloadURL := fmt.Sprintf("%s://%s/api/file/%s", scheme, host, link)
+			downloadURLs = append(downloadURLs, downloadURL)
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success":       true,
+			"message":       "OK",
+			"download_urls": downloadURLs,
+		})
+		return
 	}
 	c.Redirect(http.StatusSeeOther, "./")
 }
